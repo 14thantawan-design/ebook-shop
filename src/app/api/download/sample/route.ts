@@ -2,20 +2,17 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { INITIAL_BOOKS } from '@/data/mockBooks';
+import { resolveBookForOrder } from '@/lib/orderStore';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const orderId = searchParams.get('orderId') || 'unknown';
   const bookId = searchParams.get('bookId');
+  const file = searchParams.get('file');
 
-  // Determine which book PDF to serve
-  let book = INITIAL_BOOKS.find((b) => b.id === bookId);
-  if (!book) {
-    // Default or based on orderId
-    book = INITIAL_BOOKS[0];
-  }
-
-  const pdfFileName = book.file_path || 'ebook-lab1.pdf';
+  // Determine which book PDF to serve accurately
+  const book = resolveBookForOrder(orderId, bookId);
+  const pdfFileName = file || book.file_path || 'ebook-lab1.pdf';
   const filePath = path.join(process.cwd(), 'public', 'ebooks', pdfFileName);
 
   if (fs.existsSync(filePath)) {

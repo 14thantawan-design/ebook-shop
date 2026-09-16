@@ -55,8 +55,8 @@ function CheckoutContent() {
         localStorage.setItem('demo_orders', JSON.stringify(existing));
       }
 
-      // Redirect to mock payment page
-      router.push(`/payment/${data.order.id}`);
+      // Redirect to mock payment page with explicit bookId
+      router.push(`/payment/${data.order.id}?bookId=${selectedBook.id}`);
     } catch (err: any) {
       setErrorMessage(err.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
       setLoading(false);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState, use, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -16,13 +16,7 @@ import {
 } from 'lucide-react';
 import { Order } from '@/types';
 
-export default function OrderDetailPage({
-  params,
-}: {
-  params: Promise<{ orderId: string }>;
-}) {
-  const resolvedParams = use(params);
-  const orderId = resolvedParams.orderId;
+function OrderDetailContent({ orderId }: { orderId: string }) {
   const searchParams = useSearchParams();
   const emailParam = searchParams.get('email');
 
@@ -34,32 +28,47 @@ export default function OrderDetailPage({
   useEffect(() => {
     async function loadOrder() {
       try {
+        let storedOrder: Order | null = null;
+        if (typeof window !== 'undefined') {
+          const stored = JSON.parse(localStorage.getItem('demo_orders') || '{}');
+          if (stored[orderId]) {
+            const foundOrder = stored[orderId] as Order;
+            storedOrder = foundOrder;
+            setOrder(foundOrder);
+            if (foundOrder.status === 'PAID') {
+              const bId = foundOrder.book_id || foundOrder.book?.id;
+              setDownloadUrl(`/api/download/sample?bookId=${bId}&orderId=${orderId}`);
+            }
+          }
+        }
+
         const queryUrl = emailParam
-          ? `/api/orders/${orderId}?email=${encodeURIComponent(emailParam)}`
-          : `/api/orders/${orderId}`;
+          ? `/api/orders/${orderId}?email=${encodeURIComponent(emailParam)}&bookId=${storedOrder?.book_id || ''}`
+          : `/api/orders/${orderId}?bookId=${storedOrder?.book_id || ''}`;
 
         const res = await fetch(queryUrl);
         const data = await res.json();
 
         if (!res.ok || !data.success) {
-          // Check localStorage fallback
-          if (typeof window !== 'undefined') {
-            const stored = JSON.parse(localStorage.getItem('demo_orders') || '{}');
-            if (stored[orderId]) {
-              setOrder(stored[orderId]);
-              if (stored[orderId].status === 'PAID') {
-                setDownloadUrl(`/api/download/sample?orderId=${orderId}`);
-              }
-              setLoading(false);
-              return;
-            }
+          if (storedOrder) {
+            setLoading(false);
+            return;
           }
           throw new Error(data.error || 'ไม่พบข้อมูลคำสั่งซื้อ');
         }
 
-        setOrder(data.order);
-        if (data.downloadUrl) {
-          setDownloadUrl(data.downloadUrl);
+        const merged: Order = {
+          ...storedOrder,
+          ...data.order,
+          book_id: data.order.book_id || storedOrder?.book_id || storedOrder?.book?.id,
+          book: data.order.book || storedOrder?.book,
+        };
+        setOrder(merged);
+
+        if (merged.status === 'PAID') {
+          const bId = merged.book_id || merged.book?.id;
+          const dl = data.downloadUrl || `/api/download/sample?bookId=${bId}&orderId=${orderId}`;
+          setDownloadUrl(dl);
         }
       } catch (err: any) {
         setError(err.message || 'เกิดข้อผิดพลาดในการดึงข้อมูล');
@@ -210,5 +219,27 @@ export default function OrderDetailPage({
         )}
       </div>
     </div>
+  );
+}
+
+export default function OrderDetailPage({
+  params,
+}: {
+  params: Promise<{ orderId: string }>;
+}) {
+  const resolvedParams = use(params);
+  const orderId = resolvedParams.orderId;
+
+  return (
+    <Suspense
+      fallback={
+        <div className="py-20 text-center text-slate-500">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto text-blue-600 mb-2" />
+          <p>กำลังโหลดข้อมูลคำสั่งซื้อ...</p>
+        </div>
+      }
+    >
+      <OrderDetailContent orderId={orderId} />
+    </Suspense>
   );
 }

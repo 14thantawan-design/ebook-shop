@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabaseAdmin';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 import { INITIAL_BOOKS } from '@/data/mockBooks';
+import { generateMockOrderId, saveOrderToStore } from '@/lib/orderStore';
 
 export async function POST(request: Request) {
   try {
@@ -62,18 +63,20 @@ export async function POST(request: Request) {
     }
 
     // Fallback Mock Order Generation for offline/local test
-    const mockOrderId = 'ord-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
+    const mockOrderId = generateMockOrderId(book.id);
     const mockOrder = {
       id: mockOrderId,
       book_id: book.id,
       customer_name: customerName.trim(),
       customer_email: customerEmail.trim().toLowerCase(),
       amount: orderAmount,
-      status: 'PENDING',
+      status: 'PENDING' as const,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       book: book,
     };
+
+    saveOrderToStore(mockOrder);
 
     return NextResponse.json({ success: true, order: mockOrder, mocked: true });
   } catch (err: any) {

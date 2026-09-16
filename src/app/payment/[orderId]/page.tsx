@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState, use, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   ShieldAlert,
   CreditCard,
@@ -14,14 +15,11 @@ import {
   Mail,
 } from 'lucide-react';
 import { Order } from '@/types';
+import { INITIAL_BOOKS } from '@/data/mockBooks';
 
-export default function PaymentPage({
-  params,
-}: {
-  params: Promise<{ orderId: string }>;
-}) {
-  const resolvedParams = use(params);
-  const orderId = resolvedParams.orderId;
+function PaymentContent({ orderId }: { orderId: string }) {
+  const searchParams = useSearchParams();
+  const bookIdParam = searchParams.get('bookId');
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,27 +31,43 @@ export default function PaymentPage({
   useEffect(() => {
     async function loadOrder() {
       try {
-        // Try fetching order from API
-        const res = await fetch(`/api/orders/${orderId}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.order) {
-            setOrder(data.order);
-            if (data.order.status === 'PAID') {
-              setPaidSuccess(true);
-            }
-            setLoading(false);
-            return;
-          }
-        }
+        let currentOrder: Order | null = null;
 
-        // Fallback from localStorage
+        // 1. Fallback / fast-load from localStorage
         if (typeof window !== 'undefined') {
           const stored = JSON.parse(localStorage.getItem('demo_orders') || '{}');
           if (stored[orderId]) {
-            setOrder(stored[orderId]);
-            if (stored[orderId].status === 'PAID') {
+            const foundOrder = stored[orderId] as Order;
+            currentOrder = foundOrder;
+            setOrder(foundOrder);
+            if (foundOrder.status === 'PAID') {
               setPaidSuccess(true);
+              const bId = foundOrder.book_id || foundOrder.book?.id;
+              setDownloadUrl(`/api/download/sample?bookId=${bId}&orderId=${orderId}`);
+            }
+          }
+        }
+
+        // 2. Fetch order from API with bookId hint
+        const effectiveBookId = bookIdParam || currentOrder?.book_id || currentOrder?.book?.id || '';
+        const res = await fetch(`/api/orders/${orderId}?bookId=${effectiveBookId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.order) {
+            const mergedOrder: Order = {
+              ...currentOrder,
+              ...data.order,
+              book_id: data.order.book_id || currentOrder?.book_id || currentOrder?.book?.id,
+              book: data.order.book || currentOrder?.book,
+            };
+            setOrder(mergedOrder);
+            if (mergedOrder.status === 'PAID') {
+              setPaidSuccess(true);
+              if (data.downloadUrl) {
+                setDownloadUrl(data.downloadUrl);
+              } else {
+                setDownloadUrl(`/api/download/sample?bookId=${mergedOrder.book_id}&orderId=${orderId}`);
+              }
             }
           }
         }
@@ -65,11 +79,14 @@ export default function PaymentPage({
     }
 
     loadOrder();
-  }, [orderId]);
+  }, [orderId, bookIdParam]);
 
   const handleSimulatePayment = async () => {
     setProcessing(true);
     try {
+      const currentBookId = order?.book_id || order?.book?.id || bookIdParam;
+      const foundBook = INITIAL_BOOKS.find((b) => b.id === currentBookId) || order?.book;
+
       const res = await fetch('/api/payment/mock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -77,8 +94,8 @@ export default function PaymentPage({
           orderId,
           customerEmail: order?.customer_email,
           customerName: order?.customer_name,
-          bookTitle: order?.book?.title,
-          bookId: order?.book_id,
+          bookTitle: foundBook?.title,
+          bookId: foundBook?.id || currentBookId,
         }),
       });
 
@@ -92,6 +109,9 @@ export default function PaymentPage({
       if (data.downloadUrl) {
         setDownloadUrl(data.downloadUrl);
       }
+      if (data.order) {
+        setOrder(data.order);
+      }
 
       if (data.emailResult?.mocked) {
         setEmailStatus('จำลองการส่งอีเมลสำเร็จ (โหมดทดสอบ)');
@@ -104,6 +124,9 @@ export default function PaymentPage({
         const stored = JSON.parse(localStorage.getItem('demo_orders') || '{}');
         if (stored[orderId]) {
           stored[orderId].status = 'PAID';
+          stored[orderId].downloadUrl = data.downloadUrl;
+          if (data.order?.book) stored[orderId].book = data.order.book;
+          if (data.order?.book_id) stored[orderId].book_id = data.order.book_id;
           localStorage.setItem('demo_orders', JSON.stringify(stored));
         }
       }
@@ -285,5 +308,27 @@ export default function PaymentPage({
         )}
       </div>
     </div>
+  );
+}
+
+export default function PaymentPage({
+  params,
+}: {
+  params: Promise<{ orderId: string }>;
+}) {
+  const resolvedParams = use(params);
+  const orderId = resolvedParams.orderId;
+
+  return (
+    <Suspense
+      fallback={
+        <div className="py-20 text-center text-slate-500">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto text-blue-600 mb-2" />
+          <p>กำลังเตรียมหน้าชำระเงิน...</p>
+        </div>
+      }
+    >
+      <PaymentContent orderId={orderId} />
+    </Suspense>
   );
 }

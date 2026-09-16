@@ -67,6 +67,17 @@ export async function sendDeliveryEmail({
     </div>
   `;
 
+  const emailText = `ยืนยันคำสั่งซื้อ E-book สำเร็จ
+เรียนคุณ ${customerName}
+รหัสคำสั่งซื้อ: ${orderId} (สถานะ: PAID)
+รายการหนังสือที่สั่งซื้อ: ${bookTitle}
+
+คลิกดาวน์โหลดไฟล์ E-book (PDF):
+${fullDownloadUrl}
+
+(ลิงก์นี้มีอายุจำกัด ${expiresInMinutes} นาที)
+ระบบทดสอบร้านค้าจำลอง (DEMO ONLY) ตามใบงาน Vibe Coding: E-book Shop`;
+
   // First, attempt sending to recipient
   try {
     const data = await resend.emails.send({
@@ -74,6 +85,7 @@ export async function sendDeliveryEmail({
       to: toEmail,
       subject: `[คำสั่งซื้อสำเร็จ] ลิงก์ดาวน์โหลด E-book: ${bookTitle}`,
       html: emailHtml,
+      text: emailText,
     });
     return { success: true, mocked: false, data };
   } catch (err: any) {
@@ -88,6 +100,7 @@ export async function sendDeliveryEmail({
           to: fallbackOwnerEmail,
           subject: `[คำสั่งซื้อสำเร็จ - ส่งถึงเจ้าของบัญชี] E-book: ${bookTitle}`,
           html: emailHtml,
+          text: emailText,
         });
         return {
           success: true,

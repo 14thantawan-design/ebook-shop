@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabaseAdmin';
 import { sendDeliveryEmail } from '@/lib/email';
 import { INITIAL_BOOKS } from '@/data/mockBooks';
+import { resolveBookForOrder, updateOrderStatusInStore } from '@/lib/orderStore';
 
 export async function POST(request: Request) {
   try {
@@ -83,11 +84,13 @@ export async function POST(request: Request) {
     }
 
     // Mock Offline / Demo Payment handler
-    const fallbackBook = INITIAL_BOOKS.find((b) => b.id === bookId) || INITIAL_BOOKS[0];
+    const fallbackBook = resolveBookForOrder(orderId, bookId, bookTitle);
     const finalBookTitle = bookTitle || fallbackBook.title;
     const finalCustomerEmail = customerEmail || '14thantawan@gmail.com';
     const finalCustomerName = customerName || 'ผู้ทดสอบระบบ';
     const demoDownloadUrl = `/api/download/sample?bookId=${fallbackBook.id}&orderId=${orderId}`;
+
+    updateOrderStatusInStore(orderId, 'PAID');
 
     const emailResult = await sendDeliveryEmail({
       toEmail: finalCustomerEmail,
@@ -103,10 +106,11 @@ export async function POST(request: Request) {
       mocked: true,
       order: {
         id: orderId,
+        book_id: fallbackBook.id,
         status: 'PAID',
         customer_email: finalCustomerEmail,
         customer_name: finalCustomerName,
-        book: { title: finalBookTitle },
+        book: fallbackBook,
         updated_at: new Date().toISOString(),
       },
       downloadUrl: demoDownloadUrl,

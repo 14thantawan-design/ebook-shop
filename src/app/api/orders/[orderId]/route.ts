@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabaseAdmin';
 import { INITIAL_BOOKS } from '@/data/mockBooks';
+import { getOrderFromStore, resolveBookForOrder } from '@/lib/orderStore';
 
 export async function GET(
   request: Request,
@@ -46,7 +47,7 @@ export async function GET(
         if (signedData) {
           downloadUrl = signedData.signedUrl;
         } else {
-          downloadUrl = `/api/download/sample?orderId=${orderId}`;
+          downloadUrl = `/api/download/sample?bookId=${order.book_id || order.book?.id}&orderId=${orderId}`;
         }
       }
 
@@ -58,20 +59,44 @@ export async function GET(
     }
 
     // Mock response for testing
+    const existingOrder = getOrderFromStore(orderId);
+    const bookIdParam = searchParams.get('bookId');
+    const resolvedBook = resolveBookForOrder(
+      orderId,
+      bookIdParam || existingOrder?.book_id || existingOrder?.book?.id,
+      existingOrder?.book?.title
+    );
+
+    // Security Check: If emailVerify is provided, ensure it matches
+    if (emailVerify && existingOrder && existingOrder.customer_email.toLowerCase() !== emailVerify) {
+      return NextResponse.json(
+        { error: 'อีเมลไม่ตรงกับคำสั่งซื้อนี้ เพื่อความปลอดภัยจึงไม่สามารถแสดงข้อมูลได้' },
+        { status: 403 }
+      );
+    }
+
+    const orderStatus = existingOrder ? existingOrder.status : (emailVerify ? 'PAID' : 'PENDING');
+    const orderData = existingOrder || {
+      id: orderId,
+      book_id: resolvedBook.id,
+      customer_name: 'ผู้สั่งซื้อ',
+      customer_email: emailVerify || '14thantawan@gmail.com',
+      amount: resolvedBook.price,
+      status: orderStatus,
+      book: resolvedBook,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const downloadUrl = orderData.status === 'PAID'
+      ? `/api/download/sample?bookId=${resolvedBook.id}&orderId=${orderId}`
+      : null;
+
     return NextResponse.json({
       success: true,
       mocked: true,
-      order: {
-        id: orderId,
-        customer_name: 'ผู้ทดสอบระบบ',
-        customer_email: emailVerify || 'test@example.com',
-        amount: 299,
-        status: 'PAID',
-        book: INITIAL_BOOKS[0],
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      downloadUrl: `/api/download/sample?orderId=${orderId}`,
+      order: orderData,
+      downloadUrl,
     });
   } catch (err: any) {
     console.error('Fetch order error:', err);
