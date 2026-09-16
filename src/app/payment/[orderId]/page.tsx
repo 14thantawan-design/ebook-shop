@@ -73,7 +73,13 @@ export default function PaymentPage({
       const res = await fetch('/api/payment/mock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId }),
+        body: JSON.stringify({
+          orderId,
+          customerEmail: order?.customer_email,
+          customerName: order?.customer_name,
+          bookTitle: order?.book?.title,
+          bookId: order?.book_id,
+        }),
       });
 
       const data = await res.json();

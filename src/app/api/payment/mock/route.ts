@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabaseAdmin';
-import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 import { sendDeliveryEmail } from '@/lib/email';
 import { INITIAL_BOOKS } from '@/data/mockBooks';
 
 export async function POST(request: Request) {
   try {
-    const { orderId } = await request.json();
+    const body = await request.json();
+    const { orderId, customerEmail, customerName, bookTitle, bookId } = body;
 
     if (!orderId) {
       return NextResponse.json({ error: 'ไม่พบรหัสคำสั่งซื้อ' }, { status: 400 });
@@ -60,15 +60,16 @@ export async function POST(request: Request) {
 
       // Fallback download link if signed URL not generated
       if (!downloadUrl) {
-        downloadUrl = `/api/download/sample?orderId=${orderId}`;
+        downloadUrl = `/api/download/sample?bookId=${bookData?.id || ''}&orderId=${orderId}`;
       }
 
       // 4. Send delivery email
+      const targetEmail = orderData.customer_email || customerEmail || '14thantawan@gmail.com';
       const emailResult = await sendDeliveryEmail({
-        toEmail: orderData.customer_email,
-        customerName: orderData.customer_name,
+        toEmail: targetEmail,
+        customerName: orderData.customer_name || customerName || 'ผู้สั่งซื้อ',
         orderId: orderData.id,
-        bookTitle: bookData?.title || 'E-book',
+        bookTitle: bookData?.title || bookTitle || 'คู่มือพัฒนา Media Player PRO',
         downloadUrl: downloadUrl,
         expiresInMinutes: 60,
       });
@@ -82,12 +83,17 @@ export async function POST(request: Request) {
     }
 
     // Mock Offline / Demo Payment handler
-    const demoDownloadUrl = `/api/download/sample?orderId=${orderId}`;
+    const fallbackBook = INITIAL_BOOKS.find((b) => b.id === bookId) || INITIAL_BOOKS[0];
+    const finalBookTitle = bookTitle || fallbackBook.title;
+    const finalCustomerEmail = customerEmail || '14thantawan@gmail.com';
+    const finalCustomerName = customerName || 'ผู้ทดสอบระบบ';
+    const demoDownloadUrl = `/api/download/sample?bookId=${fallbackBook.id}&orderId=${orderId}`;
+
     const emailResult = await sendDeliveryEmail({
-      toEmail: 'customer@demo.local',
-      customerName: 'Demo Customer',
+      toEmail: finalCustomerEmail,
+      customerName: finalCustomerName,
       orderId,
-      bookTitle: 'E-book Demo Title',
+      bookTitle: finalBookTitle,
       downloadUrl: demoDownloadUrl,
       expiresInMinutes: 60,
     });
@@ -98,6 +104,9 @@ export async function POST(request: Request) {
       order: {
         id: orderId,
         status: 'PAID',
+        customer_email: finalCustomerEmail,
+        customer_name: finalCustomerName,
+        book: { title: finalBookTitle },
         updated_at: new Date().toISOString(),
       },
       downloadUrl: demoDownloadUrl,
